@@ -46,14 +46,9 @@ int main(int argc, char *argv[])
 
     LOG("Getting queue.");
     char* mqPtr = create_queue_syscall();
-    
-    // printf("Queue pointer: 0x%08x\n", mqPtr);
 
     LOG("Sending message.");
     msg_send_syscall(message, messageLength, mqPtr);
-    
-    LOG("Deleting queue.");
-    delete_queue_syscall();
     
     return 0;
 }

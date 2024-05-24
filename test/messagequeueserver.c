@@ -49,17 +49,14 @@ int main(int argc, char *argv[])
 
     LOG("Receiving message.");
     msg_receive_syscall(receiveBuffer, &messageLength, mqPtr);
-
-    LOG(receiveBuffer);
-    LOG(messageLength);
-    
+   
     LOG("Sending ACK.");
     msg_ack_syscall();
     
-    // LOG("Deleting queue.");
-    // delete_queue_syscall();
-    
-    // free(receiveBufferPtr);
+    LOG("Deleting queue.");
+    delete_queue_syscall();
+
+    printf("Received message (len:%d): %s\n", messageLength, receiveBuffer);
 
     return 0;
 }

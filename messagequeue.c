@@ -79,7 +79,7 @@ SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLengt
     if (queuePtr != NULL && messageLength <= MAX_BUFFER_SIZE)
     {
         LOG("Copying the message to kernel buffer.");
-        copy_from_user(queuePtr, messageString, messageLength);
+        memcpy(queuePtr, messageString, messageLength);
         kernelMessageLength = messageLength;
     }
     LOG("Releasing bufferFilledLock.");
@@ -102,10 +102,10 @@ SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLe
     if (queuePtr != NULL)
     {
         LOG("Copying message from kernel to user.");
-        copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength);
+        memcpy(receiveBufferPtr, queuePtr, kernelMessageLength);
 
         LOG("Copying message length from kernel to user.");
-        copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
+        memcpy(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
     }
 
     LOG("Exiting msg_receive system call.");

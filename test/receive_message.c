@@ -48,6 +48,6 @@ int main(int argc, char *argv[])
     LOG("Receiving message.");
     char* mqPtr = create_queue_syscall();
     msg_receive_syscall(receiveBuffer, &messageLength, mqPtr);
-    LOG(receiveBuffer);
-    LOG(messageLength);
+    
+    printf("Received message (len:%d): %s\n", messageLength, receiveBuffer);
 }
