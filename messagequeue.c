@@ -6,11 +6,27 @@
 
 #define LOG(m) printk("%s: %d : %s\n", __FILE__, __LINE__, m)
 
+//#define USE_SPIN_LOCK
+#define USE_MUTEX
+
+#ifdef USE_SPIN_LOCK
+    #define DEFINE_LOCK(__lock) DEFINE_SPINLOCK(__lock)
+    #define LOCK(__lock) spin_lock(__lock)
+    #define UNLOCK(__lock) spin_unlock(__lock)
+#elif defined USE_MUTEX
+    #define DEFINE_LOCK(__lock) DEFINE_MUTEX(__lock)
+    #define LOCK(__lock) mutex_lock(__lock)
+    #define UNLOCK(__lock) mutex_unlock(__lock)
+#else
+    #error Locking premitive not defined (USE_SPIN_LOCK, USE_MUTEX)
+#endif
+
+
 char * kernelBufferPtr = NULL;
 int kernelMessageLength = 0u;
 
-DEFINE_SPINLOCK(bufferFilledLock);
-DEFINE_SPINLOCK(readAckLock);
+DEFINE_LOCK(bufferFilledLock);
+DEFINE_LOCK(readAckLock);
 
 
 SYSCALL_DEFINE0(create_queue)
@@ -26,9 +42,10 @@ SYSCALL_DEFINE0(create_queue)
         kernelBufferPtr = (char*)kmalloc(MAX_BUFFER_SIZE * sizeof(char), GFP_ATOMIC);
         if(kernelBufferPtr != NULL)
         {
-            LOG("Getting spinlocks");
-            spin_lock(&bufferFilledLock);
-            spin_lock(&readAckLock);
+            LOG("Getting bufferFilledLock.");
+            LOCK(&bufferFilledLock);
+            LOG("Getting readAckLock.");
+            LOCK(&readAckLock);
         }
     }
 
@@ -45,12 +62,13 @@ SYSCALL_DEFINE0(delete_queue)
     {
         LOG("Freeing the buffer memory.");
         kfree(kernelBufferPtr);
-        LOG("Initializing spinlocks.");
-        spin_unlock(&bufferFilledLock);
-        spin_unlock(&readAckLock);
+        LOG("Initializing bufferFilledLock.");
+        UNLOCK(&bufferFilledLock);
+        LOG("Initializing readAckLock.");
+        UNLOCK(&readAckLock);
     }
     kernelBufferPtr = NULL;
-    LOG("Exting delete_queue system call.");
+    LOG("Exiting delete_queue system call.");
     return 0;
 }
 
@@ -61,14 +79,14 @@ SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLengt
     if (queuePtr != NULL && messageLength <= MAX_BUFFER_SIZE)
     {
         LOG("Copying the message to kernel buffer.");
-        memcpy(queuePtr, messageString, (size_t)messageLength);
+        copy_from_user(queuePtr, messageString, messageLength);
         kernelMessageLength = messageLength;
     }
-    LOG("Releasing bufferFilledLock spinlock.");
-    spin_unlock(&bufferFilledLock);
+    LOG("Releasing bufferFilledLock.");
+    UNLOCK(&bufferFilledLock);
 
-    LOG("Getting the readAckLock spinlock.");
-    spin_lock(&readAckLock);
+    LOG("Getting readAckLock.");
+    LOCK(&readAckLock);
 
     LOG("Exiting msg_send system call.");
     return 0;
@@ -78,14 +96,16 @@ SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLe
 {
     LOG("Entering the msg_receive system call.");
 
-    LOG("Getting the bufferFilledLock spinlock.");
-    spin_lock(&bufferFilledLock);
+    LOG("Getting bufferFilledLock.");
+    LOCK(&bufferFilledLock);
     
     if (queuePtr != NULL)
     {
-        LOG("Copying the kernel buffer to user buffer.");
-        memcpy(receiveBufferPtr, queuePtr, (size_t)kernelMessageLength);
-        *messageLength = kernelMessageLength;
+        LOG("Copying message from kernel to user.");
+        copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength);
+
+        LOG("Copying message length from kernel to user.");
+        copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
     }
 
     LOG("Exiting msg_receive system call.");
@@ -96,8 +116,8 @@ SYSCALL_DEFINE0(msg_ack)
 {
     LOG("Entering msg_ack system call.");
 
-    LOG("Releasing readAckLock spinlock.");
-    spin_unlock(&readAckLock);
+    LOG("Releasing readAckLock.");
+    UNLOCK(&readAckLock);
 
     LOG("Exiting msg_ack system call.");
 
