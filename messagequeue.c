@@ -19,18 +19,20 @@ SYSCALL_DEFINE0(create_queue)
     
     char * ret = 0u;
 
-    LOG("Creating kernel buffer.");
-    kernelBufferPtr = (char*)kmalloc(MAX_BUFFER_SIZE * sizeof(char), GFP_ATOMIC);
-    
-    if(kernelBufferPtr != NULL)
+    if(kernelBufferPtr == NULL)
     {
-        ret = kernelBufferPtr;
-        LOG("Getting spinlocks");
-        spin_lock(&bufferFilledLock);
-        spin_lock(&readAckLock);
+        LOG("Creating kernel buffer.");
+        /* New buffer needed */
+        kernelBufferPtr = (char*)kmalloc(MAX_BUFFER_SIZE * sizeof(char), GFP_ATOMIC);
+        if(kernelBufferPtr != NULL)
+        {
+            LOG("Getting spinlocks");
+            spin_lock(&bufferFilledLock);
+            spin_lock(&readAckLock);
+        }
     }
 
-
+    ret = kernelBufferPtr;
     LOG("Exiting create_queue system call.");
     return ret;
 }
@@ -47,7 +49,7 @@ SYSCALL_DEFINE0(delete_queue)
         spin_unlock(&bufferFilledLock);
         spin_unlock(&readAckLock);
     }
-    
+    kernelBufferPtr = NULL;
     LOG("Exting delete_queue system call.");
     return 0;
 }

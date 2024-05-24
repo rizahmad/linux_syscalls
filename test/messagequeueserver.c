@@ -41,18 +41,20 @@ long msg_ack_syscall(void)
 
 int main(int argc, char *argv[])
 {
-    LOG("Creating receive buffer");
     char receiveBuffer[100] = {0};
     int messageLength = 0;
 
     LOG("Creating queue.");
     char* mqPtr = create_queue_syscall();
-    
+
     LOG("Receiving message.");
     msg_receive_syscall(receiveBuffer, &messageLength, mqPtr);
+
+    LOG(receiveBuffer);
+    LOG(messageLength);
     
-    // LOG("Sending ACK.");
-    // msg_ack_syscall();
+    LOG("Sending ACK.");
+    msg_ack_syscall();
     
     // LOG("Deleting queue.");
     // delete_queue_syscall();
