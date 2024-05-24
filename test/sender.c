@@ -41,8 +41,22 @@ long msg_ack_syscall(void)
 
 int main(int argc, char *argv[])
 {
-    char message[13] = "hello, there!";
-    int messageLength = 13;
+    char defaultMessage[13] = "hello, there!";
+    int defaultMessageLength = sizeof(defaultMessage)/(sizeof(char));
+
+    char * message;
+    int messageLength;
+    if (argc > 1u)
+    {
+        message = argv[1u];
+        messageLength = strlen(argv[1u]);
+    }
+    else
+    {
+        message = defaultMessage;
+        messageLength = defaultMessageLength;
+    }
+    
 
     LOG("Getting queue.");
     char* mqPtr = create_queue_syscall();
