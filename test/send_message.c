@@ -43,7 +43,7 @@ int main(int argc, char *argv[])
 {
 
     char message[13] = "hello, there!";
-    int messageLength = 13;
+    int messageLength = sizeof(message)/(sizeof(char));
 
     LOG("Sending message.");
     char* mqPtr = create_queue_syscall();
