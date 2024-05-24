@@ -41,19 +41,11 @@ long msg_ack_syscall(void)
 
 int main(int argc, char *argv[])
 {
+
     char message[13] = "hello, there!";
     int messageLength = 13;
 
-    LOG("Getting queue.");
-    char* mqPtr = create_queue_syscall();
-    
-    // printf("Queue pointer: 0x%08x\n", mqPtr);
-
     LOG("Sending message.");
+    char* mqPtr = create_queue_syscall();
     msg_send_syscall(message, messageLength, mqPtr);
-    
-    LOG("Deleting queue.");
-    delete_queue_syscall();
-    
-    return 0;
 }
