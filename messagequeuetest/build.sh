@@ -1,0 +1,1 @@
+gcc -o client messagequeueclient.c && gcc -o server messagequeueserver.c

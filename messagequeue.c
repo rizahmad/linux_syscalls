@@ -1,5 +1,6 @@
 #include <linux/kernel.h>
 #include <linux/syscalls.h>
+#include <linux/spinlock.h>
 
 #define MAX_BUFFER_SIZE 256
 
@@ -8,48 +9,9 @@
 char * kernelBufferPtr = NULL;
 int kernelMessageLength = 0u;
 
-typedef struct 
-{
-    int lock;
-} MQ_Spinlock;
+DEFINE_SPINLOCK(bufferFilledLock);
+DEFINE_SPINLOCK(readAckLock);
 
-MQ_Spinlock bufferFilledLock, readAckLock;
-
-void GetSpinlock(MQ_Spinlock spinlock);
-void ReleaseSpinlock(MQ_Spinlock spinlock);
-void InitSpinlock(MQ_Spinlock spinlock);
-
-void GetSpinlock(MQ_Spinlock spinlock)
-{
-    LOG("Entering GetSpinlock.");
-    if(spinlock.lock==1)
-    {
-        LOG("Spinlock is not free.");
-    }
-    while (spinlock.lock == 1u);
-    spinlock.lock = 1u;
-
-    
-    LOG("Exiting GetSpinlock.");
-}
-
-void ReleaseSpinlock(MQ_Spinlock spinlock)
-{
-    LOG("Entering ReleaseSpinlock.");
-
-    spinlock.lock = 0u;
-    
-    LOG("Exiting ReleaseSpinlock.");
-}
-
-void InitSpinlock(MQ_Spinlock spinlock)
-{
-    LOG("Entering InitSpinlock.");
-
-    spinlock.lock = 0u;
-
-    LOG("Exitting InitSpinlock.");
-}
 
 SYSCALL_DEFINE0(create_queue)
 {
@@ -63,12 +25,9 @@ SYSCALL_DEFINE0(create_queue)
     if(kernelBufferPtr != NULL)
     {
         ret = kernelBufferPtr;
-        LOG("Initializing spinlocks");
-        InitSpinlock(bufferFilledLock);
-        InitSpinlock(readAckLock);
         LOG("Getting spinlocks");
-        GetSpinlock(bufferFilledLock);
-        GetSpinlock(readAckLock);
+        spin_lock(&bufferFilledLock);
+        spin_lock(&readAckLock);
     }
 
 
@@ -85,8 +44,8 @@ SYSCALL_DEFINE0(delete_queue)
         LOG("Freeing the buffer memory.");
         kfree(kernelBufferPtr);
         LOG("Initializing spinlocks.");
-        InitSpinlock(bufferFilledLock);
-        InitSpinlock(readAckLock);
+        spin_unlock(&bufferFilledLock);
+        spin_unlock(&readAckLock);
     }
     
     LOG("Exting delete_queue system call.");
@@ -104,10 +63,10 @@ SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLengt
         kernelMessageLength = messageLength;
     }
     LOG("Releasing bufferFilledLock spinlock.");
-    ReleaseSpinlock(bufferFilledLock);
+    spin_unlock(&bufferFilledLock);
 
     LOG("Getting the readAckLock spinlock.");
-    GetSpinlock(readAckLock);
+    spin_lock(&readAckLock);
 
     LOG("Exiting msg_send system call.");
     return 0;
@@ -118,7 +77,7 @@ SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLe
     LOG("Entering the msg_receive system call.");
 
     LOG("Getting the bufferFilledLock spinlock.");
-    GetSpinlock(bufferFilledLock);
+    spin_lock(&bufferFilledLock);
     
     if (queuePtr != NULL)
     {
@@ -136,7 +95,7 @@ SYSCALL_DEFINE0(msg_ack)
     LOG("Entering msg_ack system call.");
 
     LOG("Releasing readAckLock spinlock.");
-    ReleaseSpinlock(readAckLock);
+    spin_unlock(&readAckLock);
 
     LOG("Exiting msg_ack system call.");
 
