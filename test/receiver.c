@@ -52,10 +52,13 @@ int main(int argc, char *argv[])
    
     LOG("Sending ACK.");
     msg_ack_syscall();
-    
+
+    // ensure ack was received
+    usleep(10);
     LOG("Deleting queue.");
     delete_queue_syscall();
 
+    
     printf("Received message (len:%d): %s\n", messageLength, receiveBuffer);
 
     return 0;
