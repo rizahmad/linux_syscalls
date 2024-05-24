@@ -3,11 +3,15 @@
 #include <linux/spinlock.h>
 
 #define MAX_BUFFER_SIZE 256
-
-#define LOG(m) printk("%s: %d : %s\n", __FILE__, __LINE__, m)
-
-//#define USE_SPIN_LOCK
+#define DEBUG
 #define USE_MUTEX
+//#define USE_SPIN_LOCK
+
+#ifdef DEBUG
+    #define LOG(m) printk("%s: %d : %s\n", __FILE__, __LINE__, m)
+#else
+    #define LOG(m)
+#endif
 
 #ifdef USE_SPIN_LOCK
     #define DEFINE_LOCK(__lock) DEFINE_SPINLOCK(__lock)
@@ -79,7 +83,7 @@ SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLengt
     if (queuePtr != NULL && messageLength <= MAX_BUFFER_SIZE)
     {
         LOG("Copying the message to kernel buffer.");
-        memcpy(queuePtr, messageString, messageLength);
+        copy_from_user(queuePtr, messageString, messageLength);
         kernelMessageLength = messageLength;
     }
     LOG("Releasing bufferFilledLock.");
@@ -102,10 +106,10 @@ SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLe
     if (queuePtr != NULL)
     {
         LOG("Copying message from kernel to user.");
-        memcpy(receiveBufferPtr, queuePtr, kernelMessageLength);
+        copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength);
 
         LOG("Copying message length from kernel to user.");
-        memcpy(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
+        copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
     }
 
     LOG("Exiting msg_receive system call.");
