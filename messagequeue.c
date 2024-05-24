@@ -46,10 +46,13 @@ SYSCALL_DEFINE0(create_queue)
         kernelBufferPtr = (char*)kmalloc(MAX_BUFFER_SIZE * sizeof(char), GFP_ATOMIC);
         if(kernelBufferPtr != NULL)
         {
-            LOG("Getting bufferFilledLock.");
+            LOG("Trying bufferFilledLock.");
             LOCK(&bufferFilledLock);
-            LOG("Getting readAckLock.");
+            LOG("Got bufferFilledLock.");
+            
+            LOG("Trying readAckLock.");
             LOCK(&readAckLock);
+            LOG("Got readAckLock.");
         }
     }
 
@@ -89,8 +92,9 @@ SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLengt
     LOG("Releasing bufferFilledLock.");
     UNLOCK(&bufferFilledLock);
 
-    LOG("Getting readAckLock.");
+    LOG("Trying readAckLock.");
     LOCK(&readAckLock);
+    LOG("Got readAckLock.");
 
     LOG("Exiting msg_send system call.");
     return 0;
@@ -100,8 +104,9 @@ SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLe
 {
     LOG("Entering the msg_receive system call.");
 
-    LOG("Getting bufferFilledLock.");
+    LOG("Trying bufferFilledLock.");
     LOCK(&bufferFilledLock);
+    LOG("Got bufferFilledLock.");
     
     if (queuePtr != NULL)
     {
