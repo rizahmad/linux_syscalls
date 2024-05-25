@@ -12,6 +12,9 @@
 #define __NR_msg_receive 466
 #define __NR_msg_ack 467
 
+#define E_OK 0x0
+#define E_NOK 0xFF
+
 #define LOG(m) printf("%s: %d : %s\n", __FILE__, __LINE__, m)
 
 long create_queue_syscall(void)
@@ -46,9 +49,18 @@ int main(int argc, char *argv[])
 
     LOG("Creating queue.");
     char* mqPtr = create_queue_syscall();
+    if(mqPtr == NULL)
+    {
+        LOG("create_queue system call returned error.");
+        return -1;
+    }
 
     LOG("Receiving message.");
-    msg_receive_syscall(receiveBuffer, &messageLength, mqPtr);
+    if(E_OK != msg_receive_syscall(receiveBuffer, &messageLength, mqPtr))
+    {
+        LOG("msg_receive system call returned error.");
+        return -1;
+    }
    
     LOG("Sending ACK.");
     msg_ack_syscall();
@@ -56,10 +68,13 @@ int main(int argc, char *argv[])
     // ensure ack was received
     usleep(10);
     LOG("Deleting queue.");
-    delete_queue_syscall();
-
+    if(E_OK != delete_queue_syscall())
+    {
+        LOG("delete_queue system call returned error.");
+        return -1;
+    }
     
-    printf("Received message (len:%d): %s\n", messageLength, receiveBuffer);
+    printf(">>> Received message (len:%d): %s\n", messageLength, receiveBuffer);
 
     return 0;
 }

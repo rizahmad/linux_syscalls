@@ -25,20 +25,20 @@
     #error Locking premitive not defined (USE_SPIN_LOCK, USE_MUTEX)
 #endif
 
+#define E_OK 0x0
+#define E_NOK 0xFF
 
-char * kernelBufferPtr = NULL;
-int kernelMessageLength = 0u;
+static char * kernelBufferPtr = NULL;
+static int kernelMessageLength = 0u;
 
-DEFINE_LOCK(bufferFilledLock);
-DEFINE_LOCK(readAckLock);
+static DEFINE_LOCK(bufferFilledLock);
+static DEFINE_LOCK(readAckLock);
 
 
 SYSCALL_DEFINE0(create_queue)
 {
     LOG("Entering create_queue system call.");
     
-    char * ret = 0u;
-
     if(kernelBufferPtr == NULL)
     {
         LOG("Creating kernel buffer.");
@@ -56,79 +56,120 @@ SYSCALL_DEFINE0(create_queue)
         }
     }
 
-    ret = kernelBufferPtr;
     LOG("Exiting create_queue system call.");
-    return ret;
+
+    return kernelBufferPtr;
 }
 
 SYSCALL_DEFINE0(delete_queue)
 {
     LOG("Entering delete_queue system call.");
+
+    int status = E_NOK;
     
     if(kernelBufferPtr != NULL)
     {
         LOG("Freeing the buffer memory.");
         kfree(kernelBufferPtr);
+        kernelBufferPtr = NULL;
+
         LOG("Initializing bufferFilledLock.");
         UNLOCK(&bufferFilledLock);
+
         LOG("Initializing readAckLock.");
         UNLOCK(&readAckLock);
+
+        status = E_OK;
     }
-    kernelBufferPtr = NULL;
+    
     LOG("Exiting delete_queue system call.");
-    return 0;
+
+    return status;
 }
 
 SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLength, unsigned char*, queuePtr)
 {
     LOG("Entering msg_send system call.");
+
+    int status = E_NOK;
     
-    if (queuePtr != NULL && messageLength <= MAX_BUFFER_SIZE)
+    if (messageString != NULL && messageLength <= MAX_BUFFER_SIZE && queuePtr != NULL) 
     {
         LOG("Copying the message to kernel buffer.");
-        copy_from_user(queuePtr, messageString, messageLength);
-        kernelMessageLength = messageLength;
-    }
-    LOG("Releasing bufferFilledLock.");
-    UNLOCK(&bufferFilledLock);
+        if (0u != copy_from_user(queuePtr, messageString, messageLength))
+        {
+            LOG("User to kernel copy failed.");
+            LOG("Releasing bufferFilledLock.");
+            UNLOCK(&bufferFilledLock);
+        }
+        else
+        {
+            kernelMessageLength = messageLength;
+        
+            LOG("Releasing bufferFilledLock.");
+            UNLOCK(&bufferFilledLock);
 
-    LOG("Trying readAckLock.");
-    LOCK(&readAckLock);
-    LOG("Got readAckLock.");
+            LOG("Trying readAckLock.");
+            LOCK(&readAckLock);
+            LOG("Got readAckLock.");
+
+            status = E_OK;
+        }
+    }
 
     LOG("Exiting msg_send system call.");
-    return 0;
+
+    return status;
 }
 
 SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLength, unsigned char*, queuePtr)
 {
     LOG("Entering the msg_receive system call.");
 
+    int status = E_NOK;
+
     LOG("Trying bufferFilledLock.");
     LOCK(&bufferFilledLock);
     LOG("Got bufferFilledLock.");
     
-    if (queuePtr != NULL)
+    if (receiveBufferPtr != NULL && messageLength != NULL && queuePtr != NULL)
     {
         LOG("Copying message from kernel to user.");
-        copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength);
-
-        LOG("Copying message length from kernel to user.");
-        copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength));
+        if (0u != copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength))
+        {
+            LOG("Kernel to user copy failed.");
+        }
+        else
+        {
+            LOG("Copying message length from kernel to user.");
+            if (0u != copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength)))
+            {
+                LOG("Kernel to user copy failed.");
+            }
+            else
+            {
+                LOG("Copying successful.");
+                status = E_OK;
+            }
+        }
     }
 
     LOG("Exiting msg_receive system call.");
-    return 0;
+
+    return status;
 }
 
 SYSCALL_DEFINE0(msg_ack)
 {
     LOG("Entering msg_ack system call.");
 
+    int status = E_NOK;
+
     LOG("Releasing readAckLock.");
     UNLOCK(&readAckLock);
+    status = E_OK;
 
     LOG("Exiting msg_ack system call.");
 
-    return 0;
+    return status;
 }

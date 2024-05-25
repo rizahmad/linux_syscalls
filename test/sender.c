@@ -12,6 +12,9 @@
 #define __NR_msg_receive 466
 #define __NR_msg_ack 467
 
+#define E_OK 0x0
+#define E_NOK 0xFF
+
 #define LOG(m) printf("%s: %d : %s\n", __FILE__, __LINE__, m)
 
 long create_queue_syscall(void)
@@ -60,9 +63,18 @@ int main(int argc, char *argv[])
 
     LOG("Getting queue.");
     char* mqPtr = create_queue_syscall();
-
+    if(mqPtr == NULL)
+    {
+        LOG("create_queue system call returned error.");
+        return -1;
+    }
+    
     LOG("Sending message.");
-    msg_send_syscall(message, messageLength, mqPtr);
+    if(E_OK != msg_send_syscall(message, messageLength, mqPtr))
+    {
+        LOG("msg_send system call returned error.");
+        return -1;
+    }
     
     return 0;
 }
