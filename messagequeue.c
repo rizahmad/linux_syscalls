@@ -27,14 +27,73 @@ typedef struct
 
 static DEFINE_MUTEX(globalLock);
 
+
+struct QueueList{
+     struct list_head list;
+     int queueId;
+     MessageQueue * mqPtr;
+};
+
+LIST_HEAD(QueueListHeadNode);
+
+void AddMessageQueue(int queueId, MessageQueue * mqPtr);
+void RemoveMessageQueue(int queueId);
+int FindMessageQueue(int queueId);
+int FindMessageQueue(int queueId);
+MessageQueue * GetMessageQueue(int queueId);
+
+void AddMessageQueue(int queueId, MessageQueue * mqPtr)
+{
+    struct QueueList *np = kmalloc(sizeof(struct QueueList), GFP_ATOMIC);
+    np->queueId = queueId;
+    np->mqPtr = mqPtr;
+
+    INIT_LIST_HEAD(&np->list);
+
+    list_add_tail(&np->list, &QueueListHeadNode);
+}
+
+void RemoveMessageQueue(int queueId)
+{
+    struct QueueList *np, *temp;
+
+    list_for_each_entry_safe(np, temp, &QueueListHeadNode, list) {
+            list_del(&np->list);
+            kfree(np);
+        }
+}
+
 int FindMessageQueue(int queueId)
 {
-    return 0;
+    int status = E_NOK;
+    struct QueueList *np;
+
+    
+    list_for_each_entry(np, &QueueListHeadNode, list) {
+        if (np->queueId == queueId)
+        {
+            status = E_OK;
+            break;
+        }
+    }
+    
+    return status;
 }
 
 MessageQueue * GetMessageQueue(int queueId)
 {
-    return NULL;
+    struct QueueList *np;
+    MessageQueue * mqPtr = NULL;
+
+    list_for_each_entry(np, &QueueListHeadNode, list) {
+        if ( np->queueId == queueId)
+        {
+            mqPtr = np->mqPtr;
+            break;
+        }
+    }
+    
+    return mqPtr;
 }
 
 SYSCALL_DEFINE1(create_queue, unsigned int, queueId)
@@ -60,6 +119,8 @@ SYSCALL_DEFINE1(create_queue, unsigned int, queueId)
             LOG("Trying ackLock.");
             mutex_lock(&mqPtr->ackLock);
             LOG("Got ackLock.");
+
+            AddMessageQueue(queueId, mqPtr);
 
             status = E_OK;
         }
@@ -105,6 +166,8 @@ SYSCALL_DEFINE1(delete_queue, unsigned int, queueId)
         LOG("Deleting queue.");
         kfree(mqPtr);
 
+        RemoveMessageQueue(queueId);
+
         status = E_OK;
     }
     else
@@ -134,20 +197,28 @@ SYSCALL_DEFINE3(msg_send, unsigned int, queueId, char *, message, unsigned int, 
         if (mqPtr->buffer != NULL)
         {
             LOG("Copying message from user space to kernel space.");
-            copy_from_user(mqPtr->buffer, message, length);
-            mqPtr->len = length;
+            if (0u != copy_from_user(mqPtr->buffer, message, length))
+            {
+                LOG("User space to kernel space copy failed.");
+                LOG("Releasing receiveLock.");
+                mutex_unlock(&mqPtr->receiveLock);
+            }
+            else
+            {
+                mqPtr->len = length;
 
-            LOG("Releasing receiveLock.");
-            mutex_unlock(&mqPtr->receiveLock);
+                LOG("Releasing receiveLock.");
+                mutex_unlock(&mqPtr->receiveLock);
 
-            LOG("Trying ackLock.");
-            mutex_lock(&mqPtr->ackLock);
-            LOG("Got ackLock.");
+                LOG("Trying ackLock.");
+                mutex_lock(&mqPtr->ackLock);
+                LOG("Got ackLock.");
 
-            LOG("Deleting message buffer.");
-            kfree(mqPtr->buffer);
+                LOG("Deleting message buffer.");
+                kfree(mqPtr->buffer);
 
-            status = E_OK;
+                status = E_OK;
+            }
         }
         else
         {
@@ -183,12 +254,23 @@ SYSCALL_DEFINE3(msg_receive, unsigned int, queueId, char *, buffer, unsigned int
         LOG("Got receiveLock.");
 
         LOG("Copying message from kernel space to user space.");
-        copy_to_user(buffer, mqPtr->buffer, mqPtr->len);
-
-        LOG("Copying message length from kernel space to user space.");
-        copy_to_user(length, &mqPtr->len, sizeof(mqPtr->len));
-
-        status = E_OK;
+        if (0u != copy_to_user(buffer, mqPtr->buffer, mqPtr->len))
+        {
+            LOG("Copying from kernel space to user space failed.");
+        }
+        else
+        {
+            LOG("Copying message length from kernel space to user space.");
+            if (0u != copy_to_user(length, &mqPtr->len, sizeof(mqPtr->len)))
+            {
+                LOG("Copying from kernel space to user space failed.");
+            }
+            else
+            {
+                LOG("Copying successful.");
+                status = E_OK;
+            }
+        }
 
         mutex_unlock(&mqPtr->queueLock);
     }
