@@ -2,10 +2,9 @@
 #include <linux/syscalls.h>
 #include <linux/spinlock.h>
 
-#define MAX_BUFFER_SIZE 256
+#define MESSAGE_MAX 256
+#define QUEUE_MAX 10
 #define DEBUG
-#define USE_MUTEX
-//#define USE_SPIN_LOCK
 
 #ifdef DEBUG
     #define LOG(m) printk("%s: %d : %s\n", __FILE__, __LINE__, m)
@@ -13,161 +12,218 @@
     #define LOG(m)
 #endif
 
-#ifdef USE_SPIN_LOCK
-    #define DEFINE_LOCK(__lock) DEFINE_SPINLOCK(__lock)
-    #define LOCK(__lock) spin_lock(__lock)
-    #define UNLOCK(__lock) spin_unlock(__lock)
-#elif defined USE_MUTEX
-    #define DEFINE_LOCK(__lock) DEFINE_MUTEX(__lock)
-    #define LOCK(__lock) mutex_lock(__lock)
-    #define UNLOCK(__lock) mutex_unlock(__lock)
-#else
-    #error Locking premitive not defined (USE_SPIN_LOCK, USE_MUTEX)
-#endif
-
 #define E_OK 0x0
 #define E_NOK 0xFF
 
-static char * kernelBufferPtr = NULL;
-static int kernelMessageLength = 0u;
+typedef struct
+{
+    unsigned int id;
+    unsigned int len;
+    char * buffer;
+    struct mutex ackLock;
+    struct mutex receiveLock;
+    struct mutex queueLock;
+}MessageQueue;
 
-static DEFINE_LOCK(bufferFilledLock);
-static DEFINE_LOCK(readAckLock);
+static DEFINE_MUTEX(globalLock);
 
+int FindMessageQueue(int queueId)
+{
+    return 0;
+}
 
-SYSCALL_DEFINE0(create_queue)
+MessageQueue * GetMessageQueue(int queueId)
+{
+    return NULL;
+}
+
+SYSCALL_DEFINE1(create_queue, unsigned int, queueId)
 {
     LOG("Entering create_queue system call.");
-    
-    if(kernelBufferPtr == NULL)
+
+    int status = E_NOK;
+
+    if (E_NOK == FindMessageQueue(queueId))
     {
-        LOG("Creating kernel buffer.");
-        /* New buffer needed */
-        kernelBufferPtr = (char*)kmalloc(MAX_BUFFER_SIZE * sizeof(char), GFP_ATOMIC);
-        if(kernelBufferPtr != NULL)
+        LOG("Creating new message queue.");
+        MessageQueue * mqPtr = (MessageQueue*)kmalloc(sizeof(MessageQueue), GFP_ATOMIC);
+        if (mqPtr != NULL)
         {
-            LOG("Trying bufferFilledLock.");
-            LOCK(&bufferFilledLock);
-            LOG("Got bufferFilledLock.");
+            mutex_init(&mqPtr->receiveLock); 
+            mutex_init(&mqPtr->ackLock);
+            mutex_init(&mqPtr->queueLock);
+
+            LOG("Trying receiveLock.");
+            mutex_lock(&mqPtr->receiveLock);
+            LOG("Got receiveLock.");
             
-            LOG("Trying readAckLock.");
-            LOCK(&readAckLock);
-            LOG("Got readAckLock.");
-        }
-    }
-
-    LOG("Exiting create_queue system call.");
-
-    return kernelBufferPtr;
-}
-
-SYSCALL_DEFINE0(delete_queue)
-{
-    LOG("Entering delete_queue system call.");
-
-    int status = E_NOK;
-    
-    if(kernelBufferPtr != NULL)
-    {
-        LOG("Freeing the buffer memory.");
-        kfree(kernelBufferPtr);
-        kernelBufferPtr = NULL;
-
-        LOG("Initializing bufferFilledLock.");
-        UNLOCK(&bufferFilledLock);
-
-        LOG("Initializing readAckLock.");
-        UNLOCK(&readAckLock);
-
-        status = E_OK;
-    }
-    
-    LOG("Exiting delete_queue system call.");
-
-    return status;
-}
-
-SYSCALL_DEFINE3(msg_send, const char*, messageString, unsigned int, messageLength, unsigned char*, queuePtr)
-{
-    LOG("Entering msg_send system call.");
-
-    int status = E_NOK;
-    
-    if (messageString != NULL && messageLength <= MAX_BUFFER_SIZE && queuePtr != NULL) 
-    {
-        LOG("Copying the message to kernel buffer.");
-        if (0u != copy_from_user(queuePtr, messageString, messageLength))
-        {
-            LOG("User to kernel copy failed.");
-            LOG("Releasing bufferFilledLock.");
-            UNLOCK(&bufferFilledLock);
-        }
-        else
-        {
-            kernelMessageLength = messageLength;
-        
-            LOG("Releasing bufferFilledLock.");
-            UNLOCK(&bufferFilledLock);
-
-            LOG("Trying readAckLock.");
-            LOCK(&readAckLock);
-            LOG("Got readAckLock.");
+            LOG("Trying ackLock.");
+            mutex_lock(&mqPtr->ackLock);
+            LOG("Got ackLock.");
 
             status = E_OK;
         }
     }
+    else
+    {
+        LOG("Message queue already exists.");
+        status = E_OK;
+    }
 
-    LOG("Exiting msg_send system call.");
+    LOG("Exiting create_queue system call.");
 
     return status;
 }
 
-SYSCALL_DEFINE3(msg_receive, char *, receiveBufferPtr, unsigned int *, messageLength, unsigned char*, queuePtr)
+SYSCALL_DEFINE1(delete_queue, unsigned int, queueId)
 {
-    LOG("Entering the msg_receive system call.");
+    LOG("Entering delete_queue system call.");
 
     int status = E_NOK;
 
-    LOG("Trying bufferFilledLock.");
-    LOCK(&bufferFilledLock);
-    LOG("Got bufferFilledLock.");
-    
-    if (receiveBufferPtr != NULL && messageLength != NULL && queuePtr != NULL)
+    if (E_NOK != FindMessageQueue(queueId))
     {
-        LOG("Copying message from kernel to user.");
-        if (0u != copy_to_user(receiveBufferPtr, queuePtr, kernelMessageLength))
-        {
-            LOG("Kernel to user copy failed.");
-        }
-        else
-        {
-            LOG("Copying message length from kernel to user.");
-            if (0u != copy_to_user(messageLength, &kernelMessageLength, sizeof(kernelMessageLength)))
-            {
-                LOG("Kernel to user copy failed.");
-            }
-            else
-            {
-                LOG("Copying successful.");
-                status = E_OK;
-            }
-        }
+        MessageQueue * mqPtr = GetMessageQueue(queueId);
+
+        /* globalLock is needed here because queueLock will not be available after kfree is called.*/
+        mutex_lock(&globalLock);
+
+        LOG("Deleting message buffer.");
+        kfree(mqPtr->buffer);
+        
+        LOG("Unlocking receiveLock.");
+        mutex_unlock(&mqPtr->receiveLock);
+
+        LOG("Unlocking ackLock.");
+        mutex_unlock(&mqPtr->ackLock);
+
+        LOG("Unlocking queueLock.");
+        mutex_unlock(&mqPtr->queueLock);
+        
+        mutex_unlock(&globalLock);
+
+        LOG("Deleting queue.");
+        kfree(mqPtr);
+
+        status = E_OK;
+    }
+    else
+    {
+        LOG("Queue does not exist.");
     }
 
-    LOG("Exiting msg_receive system call.");
-
+    LOG("Exiting delete_queue system call.");
+    
     return status;
 }
 
-SYSCALL_DEFINE0(msg_ack)
+SYSCALL_DEFINE3(msg_send, unsigned int, queueId, char *, message, unsigned int, length)
+{
+    LOG("Entering msg_send system call.");
+
+    int status = E_NOK;
+
+    if (E_NOK != FindMessageQueue(queueId))
+    {
+        MessageQueue * mqPtr = GetMessageQueue(queueId);
+
+        mutex_lock(&mqPtr->queueLock);
+
+        LOG("Creating message buffer.");
+        mqPtr->buffer = (char*)kmalloc(length * sizeof(char), GFP_ATOMIC);
+        if (mqPtr->buffer != NULL)
+        {
+            LOG("Copying message from user space to kernel space.");
+            copy_from_user(mqPtr->buffer, message, length);
+            mqPtr->len = length;
+
+            LOG("Releasing receiveLock.");
+            mutex_unlock(&mqPtr->receiveLock);
+
+            LOG("Trying ackLock.");
+            mutex_lock(&mqPtr->ackLock);
+            LOG("Got ackLock.");
+
+            LOG("Deleting message buffer.");
+            kfree(mqPtr->buffer);
+
+            status = E_OK;
+        }
+        else
+        {
+            LOG("Could not create message buffer.");
+        }
+
+        mutex_unlock(&mqPtr->queueLock);
+    }
+    else
+    {
+        LOG("Queue does not exist.");
+    }
+
+    LOG("Exiting msg_send system call.");
+    
+    return status;
+}
+
+SYSCALL_DEFINE3(msg_receive, unsigned int, queueId, char *, buffer, unsigned int *, length)
+{
+    LOG("Entering msg_receive system call.");
+
+    int status = E_NOK;
+
+    if (E_NOK != FindMessageQueue(queueId))
+    {
+        MessageQueue * mqPtr = GetMessageQueue(queueId);
+
+        mutex_lock(&mqPtr->queueLock);
+
+        LOG("Trying receiveLock.");
+        mutex_lock(&mqPtr->receiveLock);
+        LOG("Got receiveLock.");
+
+        LOG("Copying message from kernel space to user space.");
+        copy_to_user(buffer, mqPtr->buffer, mqPtr->len);
+
+        LOG("Copying message length from kernel space to user space.");
+        copy_to_user(length, &mqPtr->len, sizeof(mqPtr->len));
+
+        status = E_OK;
+
+        mutex_unlock(&mqPtr->queueLock);
+    }
+    else
+    {
+        LOG("Queue does not exist.");
+    }
+
+    LOG("Exiting msg_receive system call.");
+    
+    return status;
+}
+
+SYSCALL_DEFINE1(msg_ack, unsigned int, queueId)
 {
     LOG("Entering msg_ack system call.");
 
     int status = E_NOK;
 
-    LOG("Releasing readAckLock.");
-    UNLOCK(&readAckLock);
-    status = E_OK;
+    if (E_NOK != FindMessageQueue(queueId))
+    {
+        MessageQueue * mqPtr = GetMessageQueue(queueId);
+
+        LOG("Releasing ackLock.");
+    
+        mutex_lock(&mqPtr->queueLock);
+        mutex_unlock(&mqPtr->ackLock);
+        mutex_unlock(&mqPtr->queueLock);
+
+        status = E_OK;
+    }
+    else
+    {
+        LOG("Queue does not exist.");
+    }
 
     LOG("Exiting msg_ack system call.");
 

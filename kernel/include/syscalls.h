@@ -1299,10 +1299,10 @@ int __sys_setsockopt(int fd, int level, int optname, char __user *optval,
 asmlinkage long sys_demosystemcall(void);
 
 /* message queue */
-asmlinkage long sys_create_queue(void);
-asmlinkage long sys_delete_queue(void);
-asmlinkage long sys_msg_send(char* messageString, unsigned int messageLength, unsigned char* queuePtr);
-asmlinkage long sys_msg_receive(char * receiveBufferPtr, unsigned int * messageLength, unsigned char* queuePtr);
-asmlinkage long sys_msg_ack(void);
+asmlinkage long sys_create_queue(unsigned int queueId);
+asmlinkage long sys_delete_queue(unsigned int queueId);
+asmlinkage long sys_msg_send(unsigned int queueId, char * message, unsigned int length);
+asmlinkage long sys_msg_receive(unsigned int queueId, char * buffer, unsigned int * length);
+asmlinkage long sys_msg_ack(unsigned int queueId);
 
 #endif
